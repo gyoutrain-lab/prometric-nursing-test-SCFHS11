@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>SCFHS-Style Nursing Examination</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+body{font-family:Arial;background:#f4f6f8;margin:0}
+.topbar{background:#111;color:#fff;padding:10px;display:flex;justify-content:space-between}
+.container{max-width:1100px;margin:auto;background:#fff;padding:20px}
+.question{margin-bottom:18px}
+.options label{display:block;margin:6px 0}
+.hidden{display:none}
+button{padding:10px 18px;font-size:15px;margin-top:10px}
+.section{margin-top:25px}
+h3{border-bottom:2px solid #ddd;padding-bottom:5px}
+.notice{background:#f9f9f9;border-left:4px solid #444;padding:12px;margin-top:15px}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div>Time Remaining: <span id="time">120:00</span></div>
+  <div>Violations: <span id="violations">0</span></div>
+</div>
+
+<div class="container">
+<h2>SCFHS-Style Nursing Competency Examination</h2>
+
+<p>
+Candidate Name:
+<input id="candidateName" placeholder="Enter your name" style="width:280px">
+<button onclick="startExam()">Begin Exam</button>
+</p>
+
+<form id="exam" class="hidden">
+  <div id="qbox"></div>
+  <button type="button" onclick="submitExam()">Submit Examination</button>
+</form>
+
+<div id="result" class="hidden"></div>
+</div>
+
+<script>
+/* ================= PROCTORING ================= */
+let violations=0, proctorLog=[];
+function logViolation(type,item){
+  violations++;
+  document.getElementById("violations").innerText=violations;
+  proctorLog.push({time:new Date().toISOString(),type,item});
+}
+document.addEventListener("visibilitychange",()=>{
+  if(document.hidden) logViolation("TAB_SWITCH",currentIndex+1);
+});
+window.addEventListener("blur",()=>logViolation("WINDOW_BLUR",currentIndex+1));
+
+/* ================= TIMER ================= */
+let sec=120*60, timer=null;
+function startTimer(){
+  timer=setInterval(()=>{
+    if(sec<=0){submitExam();return;}
+    sec--;
+    let m=Math.floor(sec/60), s=sec%60;
+    document.getElementById("time").innerText=
+      `${m}:${s.toString().padStart(2,"0")}`;
+  },1000);
+}
+
+/* ================= ITEM BANK (SAMPLE – REAL ITEMS) ================= */
+const items=[
+ {id:"A01",domain:"Adult",b:0.9,critical:true,
+  q:"A septic patient presents with BP 78/42 mmHg and acute confusion. What is the nurse’s PRIORITY action?",
+  o:["Recheck BP manually","Activate rapid response team","Administer oral fluids","Document findings"],
+  a:1},
+ {id:"A02",domain:"Adult",b:0.3,critical:false,
+  q:"Which ECG change is most consistent with hyperkalemia?",
+  o:["Prolonged QT","Peaked T waves","ST depression","U waves"],
+  a:1},
+ {id:"P01",domain:"Pediatric",b:0.8,critical:true,
+  q:"A child presents with stridor and a barking cough. What is the INITIAL nursing action?",
+  o:["Obtain throat culture","Provide humidified oxygen","Place supine","Administer antibiotic"],
+  a:1},
+ {id:"F01",domain:"Fundamental",b:0.4,critical:false,
+  q:"A medication error is identified before administration. What should the nurse do?",
+  o:["Proceed as ordered","Hold medication and report","Document at end of shift","Ask another nurse"],
+  a:1},
+ {id:"E01",domain:"Professional",b:1.0,critical:true,
+  q:"A competent patient refuses a recommended procedure. Which ethical principle applies?",
+  o:["Beneficence","Autonomy","Justice","Nonmaleficence"],
+  a:1}
+];
+const totalItems=items.length;
+
+/* ================= STATE ================= */
+let responses=[], startTime=null, currentIndex=0;
+
+/* ================= START ================= */
+function startExam(){
+  const name=document.getElementById("candidateName").value.trim();
+  if(!name){alert("Candidate name is required.");return;}
+  document.getElementById("exam").classList.remove("hidden");
+  startTime=new Date();
+  startTimer();
+  renderItems();
+}
+
+/* ================= RENDER ================= */
+function renderItems(){
+  const box=document.getElementById("qbox");
+  box.innerHTML="";
+  items.forEach((it,i)=>{
+    let html=`<div class="question">
+      <b>Q${i+1}/${totalItems} – ${it.domain} (Difficulty b=${it.b})</b><br>
+      ${it.q}
+      <div class="options">`;
+    it.o.forEach((x,j)=>{
+      html+=`<label>
+        <input type="radio" name="q${i}" value="${j}"
+        onclick="record(${i},${j})"> ${x}
+      </label>`;
+    });
+    html+=`</div></div>`;
+    box.innerHTML+=html;
+  });
+}
+
+/* ================= RECORD ================= */
+function record(i,j){
+  responses[i]={
+    item_id:items[i].id,
+    domain:items[i].domain,
+    b:items[i].b,
+    critical:items[i].critical,
+    selected:j,
+    correct:items[i].a,
+    is_correct:j===items[i].a
+  };
+}
+
+/* ================= SUBMIT ================= */
+function submitExam(){
+  clearInterval(timer);
+  document.getElementById("exam").classList.add("hidden");
+
+  let correct=0, criticalFail=false;
+  responses.forEach(r=>{
+    if(r && r.is_correct) correct++;
+    if(r && r.critical && !r.is_correct) criticalFail=true;
+  });
+
+  let wrong=totalItems-correct;
+  let score=Math.round(correct/totalItems*100);
+  let pass=!criticalFail && violations<3 && score>=60;
+
+  const candidate=document.getElementById("candidateName").value;
+  const resultBox=document.getElementById("result");
+  resultBox.classList.remove("hidden");
+
+  resultBox.innerHTML=`
+  <div class="section">
+    <h3>Examination Result</h3>
+    <p>
+      Name: <b>${candidate}</b><br>
+      Total Items: ${totalItems}<br>
+      Correct: ${correct}<br>
+      Incorrect: ${wrong}<br>
+      Score: ${score}%<br>
+      Proctoring Violations: ${violations}<br>
+      Result: <b>${pass?"PASS":"FAIL"}</b>
+    </p>
+  </div>
+
+  <div class="section">
+    <h3>Official Score Interpretation</h3>
+    <div class="notice">
+      <p>
+      This examination assesses minimum professional competence required for safe nursing practice.
+      Results are determined using a multi-factor evaluation model, including academic performance,
+      critical item outcomes, and compliance with examination integrity rules.
+      </p>
+      <p>
+      Certain questions are classified as <b>critical items</b>. Incorrect responses to these items
+      may result in examination failure regardless of total score, as they represent high-risk
+      clinical decisions.
+      </p>
+      <p>
+      A PASS result indicates that the candidate has demonstrated entry-level clinical judgment
+      consistent with supervised nursing practice. A FAIL result indicates that one or more required
+      competency standards were not met.
+      </p>
+      <p>
+      Individual item review and disclosure of correct answers are not provided to maintain
+      examination security.
+      </p>
+    </div>
+  </div>
+  `;
+}
+</script>
+</body>
+</html>
